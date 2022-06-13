@@ -1,0 +1,132 @@
+// SPDX-License-Identifier: MIT
+
+pragma solidity ^0.8.13;
+
+contract cinfidence{
+
+//資料建構    
+    //信用分數
+    enum Level{
+        N,
+        A,
+        B,
+        C,
+        D
+    }
+    
+    struct humandata{
+        address account; //個人位置帳號
+        string Name; //姓名
+        string ID;    //身分證字號
+        Level level ;   //信用分數
+    }
+
+    mapping(string => humandata) public Data;//個人身分證字號 => 個人資料
+    mapping(address =>address[]) Auth; //個人帳號位置 => 個人授權帳號
+
+    address Banker; //銀行帳戶位置
+    
+
+    //設定銀行
+    constructor(address _banker){
+        Banker = _banker;
+    }
+//資料建構
+
+//民眾
+    //設定民眾資料
+    function sethumandata(string memory _name,string memory _id) public {
+        require(Data[_id].account!=msg.sender);//避免重複輸入
+        Data[_id].account=msg.sender;//設定個人帳戶位置
+        Data[_id].Name=_name; //設定姓名
+        Data[_id].ID=_id;      //設定身份證字號
+        Data[_id].level=Level.N; //設定信用分數初始數值
+        
+    }
+
+    //顯示信用分數
+    function showlevel(string memory _name ,string memory _id) public view returns(string memory){
+        require (Data[_id].account==msg.sender || Banker==msg.sender );//銀行與個人有權利可以查詢
+        return choiselevel2(Data[_id].level);//使用功能2轉換為String
+    }
+    //設定授權帳號
+   function setAuth(address _Auth) public {
+        Auth[msg.sender].push(_Auth);
+    }
+//民眾
+    
+
+//授權者
+    //授權者顯示資料
+    function Authshowlevel(string memory _name ,string memory _id) public view returns(string memory){
+        require(checkAuth(msg.sender,_name));
+        return choiselevel2(Data[_name].level);
+    }
+//授權者
+
+//銀行
+    //銀行設定信用等級
+    function setlevel(string memory _name,string memory _id,string memory _level) public{
+        require(msg.sender==Banker);
+        Data[_id].level=choiselevel(_level);//使用功能1轉換成ENUM
+    }
+//銀行
+
+//內部功能
+    //內部功能1:將信用等級轉換為ENUM
+    function choiselevel(string memory _level) public pure returns (Level){
+        //判斷收到的字串為哪一個Level型態參數
+        if(keccak256(abi.encodePacked("A"))==keccak256(abi.encodePacked(_level))){
+            return Level.A;
+        }
+        else if(keccak256(abi.encodePacked("B"))==keccak256(abi.encodePacked(_level))){
+            return Level.B;
+        }
+        
+         else if(keccak256(abi.encodePacked("C"))==keccak256(abi.encodePacked(_level))){
+            return Level.C;
+        }
+        else if (keccak256(abi.encodePacked("D"))==keccak256(abi.encodePacked(_level))){
+            return Level.D;
+        }
+        else if (keccak256(abi.encodePacked("N"))==keccak256(abi.encodePacked(_level))){
+            return Level.N;
+        }
+    
+    }
+
+    //內部功能2:將ENUM轉換為信用等級
+    function choiselevel2(Level _level) public pure returns (string memory ){
+        //判斷收到的Level型態參數為哪一個字串
+        if(_level==Level.A){
+            return "A";
+        }
+        else if(_level==Level.B){
+            return "B";
+        }
+        
+         else if(_level==Level.C){
+            return "C";
+        }
+        
+        else if (_level==Level.D){
+            return "D";
+        }
+        else if (_level==Level.N){
+            return "N";
+        }
+    
+    }
+
+    //內部功能3:確認帳號是否為授權帳號
+    function checkAuth(address _Auth,string memory _name) public view returns(bool){
+        for(uint i=0;i<=Auth[Data[_name].account].length-1;i++){//確認帳號是否為授權帳號
+            if(Auth[Data[_name].account][i]==_Auth){ 
+                return true;
+            }
+        }
+        return false;
+    }
+//內部功能
+
+}
