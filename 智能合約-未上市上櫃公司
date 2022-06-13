@@ -1,0 +1,475 @@
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.13;
+contract UNOTC{
+//資料  
+    //公司審核狀態
+    enum Status{
+        Nonce,  //尚未審核
+        Check,  //檢查中
+        PASS,   //審核通過
+        FALSE   //審核不通過
+    }
+
+    //股東名冊
+    struct StockHolder{
+        address Account;//投資人帳號        
+        uint Stocks;//股數
+    }
+
+    //投資人資料
+    struct investor{
+        string  []  coltdsSymbol;//投資人擁有的公司
+        uint itoken;//錢
+    }
+
+    mapping (address => investor) investors; //投資人帳號位置 => 投資人資料
+
+    //公司資料
+    struct COLTDData{
+        address owner;      //公司帳號
+        string name;        //名稱
+        Status  status;     //審核狀態
+        uint total;         //總發行股數
+    }
+    
+    //安全碼(未用)
+    uint Securitynum; 
+
+
+    //帳號資料   
+    address public MOEA;
+    address public TPEX;
+    mapping(string => COLTDData) public COLTDs;    //統一編號 => 公司資料
+    
+    mapping(string => StockHolder[]) StockHolders ; //股東名冊 => 股東名冊 
+    
+    //掛買、掛賣資料
+    struct Hang{
+        address account; //掛單帳號位置
+        string symbol; //統一編號
+        uint quantity;//股數
+        uint prices ;//價格
+    }
+
+    mapping (string => Hang[] ) public hangBuy; //統一編號 => 買單資料
+    mapping (string => Hang[] ) public hangSell;//統一編號 => 賣單資料
+
+    //集保中心與經濟部商業司
+    constructor(address _moea, address _tpex){
+        require(_moea!=_tpex); //兩者帳戶不能相同
+        MOEA=_moea; //設定經濟部商業司
+        TPEX=_tpex; //設定集保中心
+    }
+//資料
+
+//銀行&集保中心
+    //MOEA審核公司
+    function examine(string memory _symbol,bool J2) public returns( string memory s) {
+        require(msg.sender==MOEA);//檢查是否為經濟部商業司
+        require((COLTDs[_symbol].status == Status.Check),"Status is not a checked type.");//確認受檢查公司為檢察型態
+        if(J2){//判斷是否通過
+            COLTDs[_symbol].status = Status.PASS;//通過
+            createdStockHolders(_symbol,COLTDs[_symbol].owner,COLTDs[_symbol].total);//經過內部功能1去創建股東名冊
+            return ("PASS,Processed successfully");
+        }
+        else{
+            COLTDs[_symbol].status=Status.FALSE;//不通過
+            //刪除公司申請 
+            return("FALSE,Processed successfully");
+        }
+    }
+//銀行&集保中心
+
+//公司
+    //公司申請
+    function addCOLTDs( string memory _symbol, string memory _name, uint _total) public {
+        require(msg.sender !=MOEA);//經濟部商業司不能辦公司
+        require(msg.sender !=TPEX);//集保中心不能辦理公司
+        require(COLTDs[_symbol].status==Status.Nonce,"You need to check the current applicant company type");//公司需要為審核過
+        COLTDs[_symbol].owner = msg.sender; //設定公司擁有人帳戶
+        COLTDs[_symbol].name = _name;       //設定公司名稱
+        COLTDs[_symbol].status = Status.Check;//設定公司為預設"檢查中"
+        COLTDs[_symbol].total = _total;//設定公司總發行量
+    }
+    //檢查指定公司審核是否通過-view
+    function checkCOLTDs ( string memory _symbol) public view returns (bool J2 ){
+        if(COLTDs[_symbol].status== Status.PASS){//判斷公司是否通過
+            return true;//通過
+        }
+        else{
+            return false;//不通過
+        }
+    }
+//公司
+
+//投資人
+
+    //查詢當前擁有公司(限制擁有者)-view
+    function searchinvestor(address _human)public view returns (string [] memory){
+        require(_human==msg.sender);//限定存的帳戶才能查詢
+        return investors[msg.sender].coltdsSymbol;//回傳目前擁有的公司
+    } 
+
+//投資人
+
+
+//共同-查詢
+    //查詢指定公司資料
+    function getCOLTDs( string memory _symbol) public view returns(address owner, string memory name, Status status, uint total ) {
+        return (COLTDs[_symbol].owner,COLTDs[_symbol].name,COLTDs[_symbol].status,COLTDs[_symbol].total);
+    }
+
+    //查詢指定股東的指定公司股數-view
+    function searchStock(string  memory _symbol,address   _Account ) public view returns(uint _quantity){
+        for (uint i=0; i<=((StockHolders[_symbol].length)-1);i++){//搜尋指定股東股數指定公司股數
+            if(_Account ==StockHolders[_symbol][i].Account){//判斷使否為指定股東
+              return StockHolders[_symbol][i].Stocks;//回傳指定指定公司股數
+            }
+        }
+    }
+
+    //查詢公司完整股東名冊-view
+    function searchStockHolder(string  memory _symbol) public view  returns(StockHolder [] memory){
+        return StockHolders[_symbol];//回傳指定公司股東名冊
+    }
+
+//共同-查詢
+
+//掛單
+    //查詢個人掛賣單的總數量
+    function totalhangsell(string memory _symbol ,uint _quantity) public  view returns (uint){
+        require(hangSell[_symbol].length!=0);//掛單要大於0
+        uint _quantity2 =0 ;//設定變數:擁有人當前掛單全部股票
+        for(uint i=0;i<=hangSell[_symbol].length-1;i++){//搜尋掛全部賣單
+            if(hangSell[_symbol][i].account==msg.sender){//判斷是否為掛賣單者
+                _quantity2=_quantity2+(hangSell[_symbol][i].quantity);//加總
+            }
+        }
+        return _quantity2;//回傳全部掛單總數
+    }
+    //查詢全部買單-viwq
+    function SearchBuy(string memory _symbol) public view returns (Hang [] memory){
+        require(msg.sender !=MOEA);//經濟部商業司不能查詢
+        require(msg.sender !=TPEX);//集保中心不能查詢
+        return hangBuy[_symbol];//回傳全部掛買單
+    }
+    //查詢全部賣單-view
+    function SearchSell(string memory _symbol) public view returns (Hang [] memory){
+        require(msg.sender !=MOEA);//經濟部商業司不能查詢
+        require(msg.sender !=TPEX);//集保中心不能查詢
+        return hangSell[_symbol];//回傳全部掛賣單
+    } 
+
+    //掛買
+    function addHangBuy( string memory _symbol, uint _quantity ,uint _prices) public{
+        require(_quantity!=0 && _prices!=0); //掛買金額不能為0
+        require(msg.sender !=MOEA);//經濟部商業司不能掛買
+        require(msg.sender !=TPEX);//集保中心不能掛買
+        require(COLTDs[_symbol].status == Status.PASS); //檢查掛買單公司是否為合約公司
+        //透過內部功能2，若有公司金額一樣就會增價買單股數
+        if(modifyHangBuy(_symbol,_quantity,_prices,msg.sender)== false){
+            hangBuy[_symbol].push();
+            hangBuy[_symbol][ hangBuy[_symbol].length-1].account=msg.sender;//掛買單擁有人
+            hangBuy[_symbol][ hangBuy[_symbol].length-1].symbol=_symbol;//掛買單公司統一編號
+            hangBuy[_symbol][ hangBuy[_symbol].length-1].quantity=_quantity;//掛買股數
+            hangBuy[_symbol][ hangBuy[_symbol].length-1].prices=_prices;//掛買單價格
+        } 
+    }
+    //掛賣
+    function addHangSell( string memory _symbol, uint _quantity,uint _prices) public {
+        require(_quantity!=0 && _prices!=0);//掛賣單不能為0
+        require(msg.sender !=MOEA);//不能為經濟部商業司
+        require(msg.sender !=TPEX);//不能為集保中心
+        require(COLTDs[_symbol].status == Status.PASS); //檢查是否有該股票代號資料
+        require(checkStockHolders(_symbol,msg.sender));//檢查是否有該公司股
+        if(modifyHangSell(_symbol,_quantity,_prices,msg.sender)== false){ //透過內部功能2-1，若有公司金額一樣就會增價賣單股數
+            require(searchStock(_symbol,msg.sender)>=_quantity);//檢查掛單避免掛超過自己擁有的股票
+            hangSell[_symbol].push();
+            hangSell[_symbol][ hangSell[_symbol].length-1].account=msg.sender;//掛賣單擁有人
+            hangSell[_symbol][ hangSell[_symbol].length-1].symbol=_symbol;//掛賣單統一編沆
+            hangSell[_symbol][ hangSell[_symbol].length-1].quantity=_quantity;//掛賣單股數
+            hangSell[_symbol][ hangSell[_symbol].length-1].prices=_prices;//掛賣單金額
+        }
+    }
+    //刪除買單
+    function deleteHangBuy(string memory _symbol,uint _quantity,uint _prices ,address _account) public returns(bool){
+        require(msg.sender ==_account);//確認刪除的人和掛買單的人是同一個
+        if(hangBuy[_symbol].length==0){
+            return false;//無任何買單
+        }
+        for(uint i=0;i<=hangBuy[_symbol].length-1;i++){ //尋找相同賣單
+            if(hangBuy[_symbol][i].account ==_account && hangBuy[_symbol][i].prices==_prices){ //尋找價格數量相同買單 
+                hangBuy[_symbol][i] = hangBuy[_symbol][ hangBuy[_symbol].length-1]; //刪除指定的買單
+                hangBuy[_symbol].pop();
+                return true; //刪除成功
+                
+            }
+        }
+        return false;//無此買單
+    }
+    //刪除賣單
+    function deleteHangSell(string memory _symbol,uint _quantity,uint _prices ,address _account) public returns(bool){
+        require(msg.sender ==_account);//確認刪除的人和掛單的人是同一個
+        if(hangSell[_symbol].length== 0){
+            return false;
+        }
+        for(uint i=0;i<=hangSell[_symbol].length-1;i++){ //檢查新增的賣單使否和之前的價格一樣
+            if(hangSell[_symbol][i].account ==_account && hangSell[_symbol][i].prices==_prices){  //尋找一樣的賣單
+                hangSell[_symbol][i]=hangSell[_symbol][hangSell[_symbol].length-1]; //刪除指定的賣單
+                hangSell[_symbol].pop();
+                return true; 
+            }
+        }
+        return false;  
+    }
+//掛單
+
+//交易
+    //買賣單
+    function SellByIndex(string memory _symbol,address  _BuyAccount,address _SellAccount ,uint _quantity,uint _prices) public returns(string memory s){
+        require(msg.sender !=MOEA); //經濟部商業司不能交易
+        require(msg.sender !=TPEX); //集保中心不能交易
+        for(uint i=0 ; i<=(hangSell[_symbol].length-1) ;i++){ //搜尋指定賣單
+            if(hangSell[_symbol][i].account==_SellAccount && hangSell[_symbol][i].prices == _prices) { //判斷賣單存在
+
+                if(hangSell[_symbol][i].quantity >=_quantity){   //判斷購買數量未超過售出數量
+
+                    if(searchStock(_symbol,_SellAccount) != _quantity){//判斷購買數量是否等於售出者目前擁有全部的股票
+                        //購買數量不等於售出者擁有全部股票
+                        modifyStock(_symbol,_SellAccount,(searchStock(_symbol,_SellAccount) - _quantity));//透過內部功能3更改股東名冊-股數，將擁有者的賣掉的股數扣掉
+
+                        if(checkStockHolders(_symbol,_BuyAccount)){ //透過內部功能4:檢查股東，判斷購買人是否擁有股東資格
+                            modifyStock(_symbol,_BuyAccount,(searchStock(_symbol,_BuyAccount) + _quantity));//透過內部功能3更改股東名冊-股數，將購買者購買的股數紀錄至股東名冊中
+                        }
+                        else{
+                            createdStockHolders(_symbol,_BuyAccount, _quantity);//透過內部功能1創建股東名冊及投資人資料
+                        }
+                        
+                        if((hangSell[_symbol][i].quantity - _quantity)!=0){     //判斷賣單是否被買光
+                            //沒被買光
+                            hangSell[_symbol][i].quantity=(hangSell[_symbol][i].quantity) - _quantity; //修改指定賣單股數
+                            return "Processed successfully";
+                        }
+                        else{ //被買光
+                            hangSell[_symbol][i]=hangSell[_symbol][(hangSell[_symbol].length-1)]; 
+                            hangSell[_symbol].pop();//刪除最後一個
+                            return "Processed successfully";  
+                        }
+                    }
+                    else{//購買數量售出者擁有全部股票
+                        deleteStockHolders(_symbol,_SellAccount);//透過內部功能5刪除該股東股東名冊
+                        modifyinvestor(_symbol,_SellAccount);//內部功能6刪除投資人擁有的公司統一編號
+                        if(checkStockHolders(_symbol,_BuyAccount)){ //透過內部功能4:檢查股東，判斷購買人是否擁有股東資格
+                            modifyStock(_symbol,_BuyAccount,(searchStock(_symbol,_BuyAccount) + _quantity));//透過內部功能3更改股東名冊-股數，將購買者購買的股數紀錄至股東名冊中
+                        }
+                        else{
+                            createdStockHolders(_symbol,_BuyAccount,_quantity);//透過內部功能1創建股東名冊及投資人資料
+                        }
+
+                        if((hangSell[_symbol][i].quantity - _quantity) !=0){//判斷賣單是否被買光
+                            //沒被買光
+                            hangSell[_symbol][i].quantity=hangSell[_symbol][i].quantity - _quantity;//修改指定賣單股數
+                            return "Processed successfully";
+                        }
+                        else{ //被買光
+                            hangSell[_symbol][i]=hangSell[_symbol][hangSell[_symbol].length-1];
+                            hangSell[_symbol].pop();//刪除最後一個
+                            return "Processed successfully";
+                            
+                        }   
+                    }
+                }
+                else {
+                    return "The quantity purchased exceeds the currently available quantity";
+                } 
+            }
+        }
+        return "The Sell does not exist";    
+    }
+
+    //賣買單
+    function BuyByIndex(string memory _symbol,address _SellAccount,address _BuyAccount,uint _quantity,uint _prices) public returns(string memory s){
+        require(msg.sender !=MOEA);//經濟部商業司不能交易
+        require(msg.sender !=TPEX);//集保中心不能交易
+        for(uint i=0 ; i<=(hangBuy[_symbol].length-1) ;i++){//搜尋指定買單
+            if( _BuyAccount == hangBuy[_symbol][i].account && _prices==hangBuy[_symbol][i].prices) {//判斷賣單存在
+                if(hangBuy[_symbol][i].quantity >=_quantity){    //判斷是否一次買光                     
+                    if(searchStock(_symbol,_SellAccount) !=_quantity){//判斷是否一次賣光個人擁有股票
+                        //尚未賣光個人擁有股票
+                        modifyStock(_symbol,_SellAccount,(searchStock(_symbol,_SellAccount)-_quantity));//透過內部功能3更改股東名冊-股數，將擁有者的售出的股數扣掉並更新股東名冊
+                         if(checkStockHolders(_symbol,_BuyAccount)){ ////透過內部功能4:檢查股東，判斷欲購買人是否擁有股東資格
+                            modifyStock(_symbol,_BuyAccount,(searchStock(_symbol,_BuyAccount) + _quantity));//透過內部功能3更改股東名冊-股數，將欲購買者購買的股數紀錄至股東名冊中
+                          }
+                          else{
+                            createdStockHolders(_symbol,_BuyAccount,_quantity);//透過內部功能1創建股東名冊及投資人資料
+                          }
+                        if((hangBuy[_symbol][i].quantity - _quantity)!=0){ //判斷買單是否被賣光
+                            //買單尚未賣光
+                            hangBuy[_symbol][i].quantity=(hangBuy[_symbol][i].quantity) - _quantity; //更改掛賣單數量
+                            return "Processed successfully";
+                          }
+                        else{ //買單售完
+                            hangBuy[_symbol][i]=hangBuy[_symbol][(hangBuy[_symbol].length-1)]; 
+                            hangBuy[_symbol].pop();//刪除最後一個
+                            return "Processed successfully";                                                     
+                        }
+                    }
+                    else{//賣光個人擁有股票
+                        deleteStockHolders(_symbol,_SellAccount);///透過內部功能5刪除該股東股東名冊
+                        modifyinvestor(_symbol,_SellAccount);//內部功能6刪除擁有人目前擁有的公司統一編號
+                        if(checkStockHolders(_symbol,_BuyAccount)){ //判斷欲購買人是否擁有股東資格
+                            modifyStock(_symbol,_BuyAccount,((searchStock(_symbol,_BuyAccount)) + _quantity));//將欲購買者購買的股數紀錄至股東名冊中
+                        }
+                        else{
+                            createdStockHolders(_symbol,_BuyAccount,_quantity);//透過內部功能1創建股東名冊及投資人資料
+                        }
+                        if((hangBuy[_symbol][i].quantity - _quantity) !=0){//判斷買單是否被賣光
+                            //買單尚賣光
+                            hangBuy[_symbol][i].quantity=hangBuy[_symbol][i].quantity - _quantity;//更改掛賣單數量
+                            return "Processed successfully";
+                        }
+                        else{ //買單售完                   
+                            hangBuy[_symbol][i]=hangBuy[_symbol][hangBuy[_symbol].length-1];
+                            hangBuy[_symbol].pop();
+                            return "Processed successfully";
+                        }                            
+                    }
+                }   
+                else {
+                    return "The quantity sold exceeds the quantity purchased";
+                }                  
+            }
+        }
+        return "The Buy does not exist";    
+    }
+
+    //直接交易
+    function Transaction (string memory _symbol,address _Account,uint _quantity,uint _prices)public returns(string memory _s){
+        
+        require(msg.sender !=MOEA,"5");//經濟部商業司不能交易
+        require(msg.sender !=TPEX,"4");//集保中心不能交易
+        require(COLTDs[_symbol].status == Status.PASS,"3");//檢查是否有該股票代號資料
+        
+        //判斷擁有者股數是否足夠 or //判斷擁有股份扣掉目前已掛賣單股份是否足夠販賣
+        if(hangSell[_symbol].length!=0){//判斷是否無賣單
+            require(totalhangsell(_symbol,_quantity)>=_quantity);//判斷擁有股份扣掉目前已掛賣單股份是否足夠販賣
+        }
+        else{
+            require(searchStock(_symbol,msg.sender)>=_quantity);//判斷擁有者股數是否足夠
+        }
+
+        if((searchStock(_symbol,msg.sender)-_quantity)!=0){//判斷擁有者是否賣光股份
+            //尚未賣光股份
+            if(checkStockHolders(_symbol,_Account)){//判斷購買者是否擁有股東資格
+                //擁有該公司股東資格
+                modifyStock(_symbol,_Account,searchStock(_symbol,_Account)+_quantity);//內部功能3:更改股東名冊-股數，變更購買者股份
+                modifyStock(_symbol,msg.sender,searchStock(_symbol,msg.sender)-_quantity);//內部功能3:更改股東名冊-股數，變更擁有者股份
+                return "Processed successfully";
+            }
+            else{
+                //無該公司股東資格
+                createdStockHolders(_symbol,_Account,_quantity);//內部功能1:創建股東名冊及投資人資料
+                modifyStock(_symbol,msg.sender,searchStock(_symbol,msg.sender)-_quantity);//內部功能3:更改股東名冊-股數，變更擁有者股份
+                return "Processed successfully";
+            }
+        }
+        else{
+            //賣光股份
+            deleteStockHolders(_symbol,_Account);//內部功能5:刪除股東名冊
+            modifyinvestor(_symbol,_Account);//內部功能6: 刪除投資人擁有的公司統一編號
+            if(checkStockHolders(_symbol,_Account)){//判斷購買者是否擁有股東資格
+                //擁有該公司股東資格
+                modifyStock(_symbol,_Account,searchStock(_symbol,_Account)+_quantity);//內部功能3:更改股東名冊-股數，變更購買者股份
+                return "Processed successfully";
+            }
+            else{
+                //無該公司股東資格
+                createdStockHolders(_symbol,_Account,_quantity);//內部功能1:創建股東名冊及投資人資料
+                return "Processed successfully";
+            } 
+        }      
+    }
+//交易
+
+//內部功能
+    //內部功能0:創建投資人資料
+    function createdinvestor(string memory _symbol,address _human )public{
+        investors [_human].coltdsSymbol.push(_symbol);//設定投資人資料
+        investors [_human].itoken=0;//設定投資人錢為預設0
+    }
+    //內部功能1:創建股東名冊及投資人資料
+    function createdStockHolders(string memory _symbol, address  _Account ,uint _quantity) public returns(bool){
+        StockHolders[_symbol].push( StockHolder({Account:_Account,Stocks:_quantity}));//新增股東/擁有股數進入名冊
+        createdinvestor(_symbol,_Account);//內部功能0創建投資人資料
+        
+    }
+    //內部功能2:判斷買單公司若掛買金額相同增加指定買單股數 
+    function modifyHangBuy(string memory _symbol, uint _quantity,uint _prices ,address _account) public returns(bool){
+        if(hangBuy[_symbol].length==0){ //判斷若買單為0，不用變更
+            return false;//無任何買單，無法變更
+        }
+        for(uint i=0;i<=hangBuy[_symbol].length-1;i++){ //尋找新增的買單
+            if(hangBuy[_symbol][i].account ==_account){  //確認買單擁有人
+                if(hangBuy[_symbol][i].prices==_prices){ //判斷價格是否同樣
+                    hangBuy[_symbol][i].quantity+=_quantity;  //修改買單股票數量-增加股票
+                    return true; //修改完成
+                }
+            }
+        }
+        return false; //無相同買單，無法變更  
+    }
+    //內部功能2-1: 判斷賣單公司若掛買金額相同增加指定買單股數
+    function modifyHangSell(string memory _symbol, uint _quantity,uint _prices ,address _account) public returns(bool){
+        if(hangSell[_symbol].length== 0){//賣單為0
+            return false;//無任何賣單
+        }
+        for(uint i=0;i<=hangSell[_symbol].length-1;i++){ //搜尋新增的賣單
+            if(hangSell[_symbol][i].account ==_account){  //確認賣單擁有人
+                require(searchStock(_symbol,_account) >=( (hangSell[_symbol][i].quantity)+_quantity));//檢查新增的賣單股票和舊的賣單股票是否超過持有人擁有
+                if(hangSell[_symbol][i].prices==_prices ){ //判斷價格是否同樣
+                    hangSell[_symbol][i].quantity=hangSell[_symbol][i].quantity +_quantity;  //修改賣單股票數量-增加股票
+                    return true; //修改相同賣單
+                }
+            }
+        }
+        return false;  //無相同賣單，無法變更
+    }
+    //內部功能3:更改股東名冊-股數
+    function modifyStock (string memory _symbol,address  _Account, uint  _quantity) public  {
+        for (uint i=0; i<=((StockHolders[_symbol].length)-1);i++){ //尋找指定公司股東名冊
+            if(_Account ==StockHolders[_symbol][i].Account){ 
+                StockHolders[_symbol][i].Stocks =_quantity;//更改指定公司股東名冊
+            }
+        }
+    }
+
+    //內部功能4: 檢查股東
+    function checkStockHolders(string memory _symbol,address _Account) public view returns(bool){
+        for (uint i=0; i<=(StockHolders[_symbol].length-1);i++){//搜尋股東名冊
+            if(_Account ==StockHolders[_symbol][i].Account){//判斷股東是否為指定公司股東
+                return true;//是公司股東
+            }
+        }
+        return false;//不是公司股東
+    }
+    //內部功能5:刪除股東名冊
+    function deleteStockHolders(string  memory _symbol,address  _Account) public  {
+        for (uint i=0; i<=(StockHolders[_symbol].length-1);i++){ //尋找指定公司股東名冊       
+            if(StockHolders[_symbol][i].Account==_Account){
+                StockHolders[_symbol][i]=StockHolders[_symbol][StockHolders[_symbol].length-1];//設定最後一個股東資料等於要刪出的股東資料
+                StockHolders[_symbol].pop();//刪除最後一個
+            }  
+        }
+    }
+    //內部功能6: 刪除投資人擁有的公司統一編號
+    function modifyinvestor(string memory _symbol ,address _human)public{
+        for(uint i=0;i<=investors[_human].coltdsSymbol.length-1;i++){//尋找指定投資人
+           if(keccak256(abi.encodePacked(investors [_human].coltdsSymbol[i] ))==keccak256(abi.encodePacked(_symbol))){//判斷指定刪除公司統一編號
+                investors[_human].coltdsSymbol[i]=investors[_human].coltdsSymbol[investors [_human].coltdsSymbol.length-1];//將最後一個資料覆蓋至刪除公司統一編沆
+                investors[_human].coltdsSymbol.pop();//刪除最後一個 
+            } 
+        }   
+    }
+//內部功能
+
+}
